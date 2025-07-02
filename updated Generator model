@@ -1,0 +1,1308 @@
+{
+  "cells": [
+    {
+      "cell_type": "markdown",
+      "metadata": {
+        "id": "view-in-github",
+        "colab_type": "text"
+      },
+      "source": [
+        "<a href=\"https://colab.research.google.com/github/ogeelekwa/Dental-Prosthesis-Generator/blob/main/updated%20Generator%20model\" target=\"_parent\"><img src=\"https://colab.research.google.com/assets/colab-badge.svg\" alt=\"Open In Colab\"/></a>"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "CUFLYYSBYDYl",
+        "outputId": "8c46e8e5-b643-4b1a-8919-b86ab58f554f"
+      },
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Python version: 3.11.13 (main, Jun  4 2025, 08:57:29) [GCC 11.4.0]\n",
+            "PyTorch version: 2.6.0+cu124\n",
+            "CUDA version: 12.4\n"
+          ]
+        }
+      ],
+      "source": [
+        "import sys\n",
+        "import torch\n",
+        "print(f\"Python version: {sys.version}\")\n",
+        "print(f\"PyTorch version: {torch.__version__}\")\n",
+        "print(f\"CUDA version: {torch.version.cuda}\")\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# 1️⃣  ── make sure you are in a shell / magic cell, not plain Python\n",
+        "%pip install -U pip wheel          # keep pip itself modern\n",
+        "%pip install -U ninja fvcore iopath  # build helper + runtime deps\n",
+        "\n",
+        "# 2️⃣  ── compile & install PyTorch3D from the stable branch\n",
+        "#       (use MAX_JOBS=1 if Colab RAM is tight → slower but safer)\n",
+        "%env MAX_JOBS=4                    # how many compiler processes\n",
+        "%pip install --no-cache-dir \"git+https://github.com/facebookresearch/pytorch3d.git@stable\"\n"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "IX82-wUI6ISY",
+        "outputId": "be01ac88-5797-42c7-b561-46cd5e792b33"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Requirement already satisfied: pip in /usr/local/lib/python3.11/dist-packages (25.1.1)\n",
+            "Requirement already satisfied: wheel in /usr/local/lib/python3.11/dist-packages (0.45.1)\n",
+            "Requirement already satisfied: ninja in /usr/local/lib/python3.11/dist-packages (1.11.1.4)\n",
+            "Requirement already satisfied: fvcore in /usr/local/lib/python3.11/dist-packages (0.1.5.post20221221)\n",
+            "Requirement already satisfied: iopath in /usr/local/lib/python3.11/dist-packages (0.1.10)\n",
+            "Requirement already satisfied: numpy in /usr/local/lib/python3.11/dist-packages (from fvcore) (2.0.2)\n",
+            "Requirement already satisfied: yacs>=0.1.6 in /usr/local/lib/python3.11/dist-packages (from fvcore) (0.1.8)\n",
+            "Requirement already satisfied: pyyaml>=5.1 in /usr/local/lib/python3.11/dist-packages (from fvcore) (6.0.2)\n",
+            "Requirement already satisfied: tqdm in /usr/local/lib/python3.11/dist-packages (from fvcore) (4.67.1)\n",
+            "Requirement already satisfied: termcolor>=1.1 in /usr/local/lib/python3.11/dist-packages (from fvcore) (3.1.0)\n",
+            "Requirement already satisfied: Pillow in /usr/local/lib/python3.11/dist-packages (from fvcore) (11.2.1)\n",
+            "Requirement already satisfied: tabulate in /usr/local/lib/python3.11/dist-packages (from fvcore) (0.9.0)\n",
+            "Requirement already satisfied: typing-extensions in /usr/local/lib/python3.11/dist-packages (from iopath) (4.14.0)\n",
+            "Requirement already satisfied: portalocker in /usr/local/lib/python3.11/dist-packages (from iopath) (3.2.0)\n",
+            "env: MAX_JOBS=4                    # how many compiler processes\n",
+            "Collecting git+https://github.com/facebookresearch/pytorch3d.git@stable\n",
+            "  Cloning https://github.com/facebookresearch/pytorch3d.git (to revision stable) to /tmp/pip-req-build-jycpcf27\n",
+            "  Running command git clone --filter=blob:none --quiet https://github.com/facebookresearch/pytorch3d.git /tmp/pip-req-build-jycpcf27\n",
+            "  Running command git checkout -q 75ebeeaea0908c5527e7b1e305fbc7681382db47\n",
+            "  Resolved https://github.com/facebookresearch/pytorch3d.git to commit 75ebeeaea0908c5527e7b1e305fbc7681382db47\n",
+            "  Preparing metadata (setup.py) ... \u001b[?25l\u001b[?25hdone\n",
+            "Requirement already satisfied: iopath in /usr/local/lib/python3.11/dist-packages (from pytorch3d==0.7.8) (0.1.10)\n",
+            "Requirement already satisfied: tqdm in /usr/local/lib/python3.11/dist-packages (from iopath->pytorch3d==0.7.8) (4.67.1)\n",
+            "Requirement already satisfied: typing-extensions in /usr/local/lib/python3.11/dist-packages (from iopath->pytorch3d==0.7.8) (4.14.0)\n",
+            "Requirement already satisfied: portalocker in /usr/local/lib/python3.11/dist-packages (from iopath->pytorch3d==0.7.8) (3.2.0)\n",
+            "Building wheels for collected packages: pytorch3d\n",
+            "\u001b[33m  DEPRECATION: Building 'pytorch3d' using the legacy setup.py bdist_wheel mechanism, which will be removed in a future version. pip 25.3 will enforce this behaviour change. A possible replacement is to use the standardized build interface by setting the `--use-pep517` option, (possibly combined with `--no-build-isolation`), or adding a `pyproject.toml` file to the source tree of 'pytorch3d'. Discussion can be found at https://github.com/pypa/pip/issues/6334\u001b[0m\u001b[33m\n",
+            "\u001b[0m  Building wheel for pytorch3d (setup.py) ... \u001b[?25l\u001b[?25hdone\n",
+            "  Created wheel for pytorch3d: filename=pytorch3d-0.7.8-cp311-cp311-linux_x86_64.whl size=60242802 sha256=bac8bf5fc8ac9a454d240110e91fc1bb09ff867e38db5a1a810fd627a341c0e5\n",
+            "  Stored in directory: /tmp/pip-ephem-wheel-cache-rl_p2meu/wheels/08/90/1b/df18c3e3634f86278e793b87f37ea4c58d0c36731196122518\n",
+            "Successfully built pytorch3d\n",
+            "Installing collected packages: pytorch3d\n",
+            "Successfully installed pytorch3d-0.7.8\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import torch, pytorch3d, sys\n",
+        "print(\"torch :\", torch.__version__)\n",
+        "print(\"cuda? :\", torch.cuda.is_available(), torch.version.cuda)\n",
+        "print(\"p3d  :\", pytorch3d.__version__)\n",
+        "print(\"python:\", sys.version)\n"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "ORv8VfmJw0IU",
+        "outputId": "51418f82-61cb-4803-fef9-9c7e51a4996a"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "torch : 2.6.0+cu124\n",
+            "cuda? : True 12.4\n",
+            "p3d  : 0.7.8\n",
+            "python: 3.11.13 (main, Jun  4 2025, 08:57:29) [GCC 11.4.0]\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "%env MAX_JOBS=1\n",
+        "%pip install --no-cache-dir \"git+https://github.com/facebookresearch/pytorch3d.git@stable\""
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "jp9VKApdw5mV",
+        "outputId": "ea4585ee-c474-48a5-b16d-4fb72396fac0"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "env: MAX_JOBS=1\n",
+            "Collecting git+https://github.com/facebookresearch/pytorch3d.git@stable\n",
+            "  Cloning https://github.com/facebookresearch/pytorch3d.git (to revision stable) to /tmp/pip-req-build-68m7qlbj\n",
+            "  Running command git clone --filter=blob:none --quiet https://github.com/facebookresearch/pytorch3d.git /tmp/pip-req-build-68m7qlbj\n",
+            "  Running command git checkout -q 75ebeeaea0908c5527e7b1e305fbc7681382db47\n",
+            "  Resolved https://github.com/facebookresearch/pytorch3d.git to commit 75ebeeaea0908c5527e7b1e305fbc7681382db47\n",
+            "  Preparing metadata (setup.py) ... \u001b[?25l\u001b[?25hdone\n",
+            "Requirement already satisfied: iopath in /usr/local/lib/python3.11/dist-packages (from pytorch3d==0.7.8) (0.1.10)\n",
+            "Requirement already satisfied: tqdm in /usr/local/lib/python3.11/dist-packages (from iopath->pytorch3d==0.7.8) (4.67.1)\n",
+            "Requirement already satisfied: typing-extensions in /usr/local/lib/python3.11/dist-packages (from iopath->pytorch3d==0.7.8) (4.14.0)\n",
+            "Requirement already satisfied: portalocker in /usr/local/lib/python3.11/dist-packages (from iopath->pytorch3d==0.7.8) (3.2.0)\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "# # Either use a leading !\n",
+        "# !pip install --extra-index-url \\\n",
+        "#     https://miropsota.github.io/torch_packages_builder \\\n",
+        "#     pytorch3d==0.7.8+pt210cu118          # <- example build tag\n",
+        "\n",
+        "# # OR use the %pip magic (preferred)\n",
+        "# %pip install --extra-index-url \\\n",
+        "#     https://miropsota.github.io/torch_packages_builder \\\n",
+        "#     pytorch3d==0.7.8+pt210cu118\n"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "eKCscpNy6Lgt",
+        "outputId": "539e7de6-8ddb-4622-e724-9e6014aef7fd"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Looking in indexes: https://pypi.org/simple, https://miropsota.github.io/torch_packages_builder\n",
+            "\u001b[31mERROR: Could not find a version that satisfies the requirement pytorch3d==0.7.8+pt210cu118 (from versions: 0.7.5+pt1.13.0cpu, 0.7.5+pt1.13.0cu116, 0.7.5+pt1.13.0cu117, 0.7.5+pt1.13.1cpu, 0.7.5+pt1.13.1cu116, 0.7.5+pt1.13.1cu117, 0.7.5+pt2.0.0cpu, 0.7.5+pt2.0.0cu117, 0.7.5+pt2.0.0cu118, 0.7.5+pt2.0.1cpu, 0.7.5+pt2.0.1cu117, 0.7.5+pt2.0.1cu118, 0.7.5+pt2.1.0cpu, 0.7.5+pt2.1.0cu118, 0.7.5+pt2.1.0cu121, 0.7.5+pt2.1.1cpu, 0.7.5+pt2.1.1cu118, 0.7.5+pt2.1.1cu121, 0.7.5+pt2.1.2cpu, 0.7.5+pt2.1.2cu118, 0.7.5+pt2.1.2cu121, 0.7.5+pt2.2.0cpu, 0.7.5+pt2.2.0cu118, 0.7.5+pt2.2.0cu121, 0.7.5+pt2.2.1cpu, 0.7.5+pt2.2.1cu118, 0.7.5+pt2.2.1cu121, 0.7.5+pt2.2.2cpu, 0.7.5+pt2.2.2cu118, 0.7.5+pt2.2.2cu121, 0.7.5+pt2.3.0cpu, 0.7.5+pt2.3.0cu118, 0.7.5+pt2.3.0cu121, 0.7.5+pt2.3.1cpu, 0.7.5+pt2.3.1cu118, 0.7.5+pt2.3.1cu121, 0.7.6+pt1.13.0cpu, 0.7.6+pt1.13.0cu116, 0.7.6+pt1.13.0cu117, 0.7.6+pt1.13.1cpu, 0.7.6+pt1.13.1cu116, 0.7.6+pt1.13.1cu117, 0.7.6+pt2.0.0cpu, 0.7.6+pt2.0.0cu117, 0.7.6+pt2.0.0cu118, 0.7.6+pt2.0.1cpu, 0.7.6+pt2.0.1cu117, 0.7.6+pt2.0.1cu118, 0.7.6+pt2.1.0cpu, 0.7.6+pt2.1.0cu118, 0.7.6+pt2.1.0cu121, 0.7.6+pt2.1.1cpu, 0.7.6+pt2.1.1cu118, 0.7.6+pt2.1.1cu121, 0.7.6+pt2.1.2cpu, 0.7.6+pt2.1.2cu118, 0.7.6+pt2.1.2cu121, 0.7.6+pt2.2.0cpu, 0.7.6+pt2.2.0cu118, 0.7.6+pt2.2.0cu121, 0.7.6+pt2.2.1cpu, 0.7.6+pt2.2.1cu118, 0.7.6+pt2.2.1cu121, 0.7.6+pt2.2.2cpu, 0.7.6+pt2.2.2cu118, 0.7.6+pt2.2.2cu121, 0.7.6+pt2.3.0cpu, 0.7.6+pt2.3.0cu118, 0.7.6+pt2.3.0cu121, 0.7.6+pt2.3.1cpu, 0.7.6+pt2.3.1cu118, 0.7.6+pt2.3.1cu121, 0.7.7+pt1.13.0cpu, 0.7.7+pt1.13.0cu116, 0.7.7+pt1.13.0cu117, 0.7.7+pt1.13.1cpu, 0.7.7+pt1.13.1cu116, 0.7.7+pt1.13.1cu117, 0.7.7+pt2.0.0cpu, 0.7.7+pt2.0.0cu117, 0.7.7+pt2.0.0cu118, 0.7.7+pt2.0.1cpu, 0.7.7+pt2.0.1cu117, 0.7.7+pt2.0.1cu118, 0.7.7+pt2.1.0cpu, 0.7.7+pt2.1.0cu118, 0.7.7+pt2.1.0cu121, 0.7.7+pt2.1.1cpu, 0.7.7+pt2.1.1cu118, 0.7.7+pt2.1.1cu121, 0.7.7+pt2.1.2cpu, 0.7.7+pt2.1.2cu118, 0.7.7+pt2.1.2cu121, 0.7.7+pt2.2.0cpu, 0.7.7+pt2.2.0cu118, 0.7.7+pt2.2.0cu121, 0.7.7+pt2.2.1cpu, 0.7.7+pt2.2.1cu118, 0.7.7+pt2.2.1cu121, 0.7.7+pt2.2.2cpu, 0.7.7+pt2.2.2cu118, 0.7.7+pt2.2.2cu121, 0.7.7+pt2.3.0cpu, 0.7.7+pt2.3.0cu118, 0.7.7+pt2.3.0cu121, 0.7.7+pt2.3.1cpu, 0.7.7+pt2.3.1cu118, 0.7.7+pt2.3.1cu121, 0.7.7+pt2.4.0cpu, 0.7.7+pt2.4.0cu118, 0.7.7+pt2.4.0cu121, 0.7.7+pt2.4.0cu124, 0.7.7+pt2.4.1cpu, 0.7.7+pt2.4.1cu118, 0.7.7+pt2.4.1cu121, 0.7.7+pt2.4.1cu124, 0.7.8+pt1.13.0cpu, 0.7.8+pt1.13.0cu116, 0.7.8+pt1.13.0cu117, 0.7.8+pt1.13.1cpu, 0.7.8+pt1.13.1cu116, 0.7.8+pt1.13.1cu117, 0.7.8+pt2.0.0cpu, 0.7.8+pt2.0.0cu117, 0.7.8+pt2.0.0cu118, 0.7.8+pt2.0.1cpu, 0.7.8+pt2.0.1cu117, 0.7.8+pt2.0.1cu118, 0.7.8+pt2.1.0cpu, 0.7.8+pt2.1.0cu118, 0.7.8+pt2.1.0cu121, 0.7.8+pt2.1.1cpu, 0.7.8+pt2.1.1cu118, 0.7.8+pt2.1.1cu121, 0.7.8+pt2.1.2cpu, 0.7.8+pt2.1.2cu118, 0.7.8+pt2.1.2cu121, 0.7.8+pt2.2.0cpu, 0.7.8+pt2.2.0cu118, 0.7.8+pt2.2.0cu121, 0.7.8+pt2.2.1cpu, 0.7.8+pt2.2.1cu118, 0.7.8+pt2.2.1cu121, 0.7.8+pt2.2.2cpu, 0.7.8+pt2.2.2cu118, 0.7.8+pt2.2.2cu121, 0.7.8+pt2.3.0cpu, 0.7.8+pt2.3.0cu118, 0.7.8+pt2.3.0cu121, 0.7.8+pt2.3.1cpu, 0.7.8+pt2.3.1cu118, 0.7.8+pt2.3.1cu121, 0.7.8+pt2.4.0cpu, 0.7.8+pt2.4.0cu118, 0.7.8+pt2.4.0cu121, 0.7.8+pt2.4.0cu124, 0.7.8+pt2.4.1cpu, 0.7.8+pt2.4.1cu118, 0.7.8+pt2.4.1cu121, 0.7.8+pt2.4.1cu124, 0.7.8+pt2.5.0cpu, 0.7.8+pt2.5.0cu118, 0.7.8+pt2.5.0cu121, 0.7.8+pt2.5.0cu124, 0.7.8+pt2.5.1cpu, 0.7.8+pt2.5.1cu118, 0.7.8+pt2.5.1cu121, 0.7.8+pt2.5.1cu124, 0.7.8+pt2.6.0cpu, 0.7.8+pt2.6.0cu118, 0.7.8+pt2.6.0cu124, 0.7.8+pt2.6.0cu126, 0.7.8+pt2.7.0cpu, 0.7.8+pt2.7.0cu118, 0.7.8+pt2.7.0cu126, 0.7.8+pt2.7.0cu128)\u001b[0m\u001b[31m\n",
+            "\u001b[0m\u001b[31mERROR: No matching distribution found for pytorch3d==0.7.8+pt210cu118\u001b[0m\u001b[31m\n",
+            "\u001b[0mLooking in indexes: https://pypi.org/simple, https://miropsota.github.io/torch_packages_builder\n",
+            "\u001b[31mERROR: Could not find a version that satisfies the requirement pytorch3d==0.7.8+pt210cu118 (from versions: 0.7.5+pt1.13.0cpu, 0.7.5+pt1.13.0cu116, 0.7.5+pt1.13.0cu117, 0.7.5+pt1.13.1cpu, 0.7.5+pt1.13.1cu116, 0.7.5+pt1.13.1cu117, 0.7.5+pt2.0.0cpu, 0.7.5+pt2.0.0cu117, 0.7.5+pt2.0.0cu118, 0.7.5+pt2.0.1cpu, 0.7.5+pt2.0.1cu117, 0.7.5+pt2.0.1cu118, 0.7.5+pt2.1.0cpu, 0.7.5+pt2.1.0cu118, 0.7.5+pt2.1.0cu121, 0.7.5+pt2.1.1cpu, 0.7.5+pt2.1.1cu118, 0.7.5+pt2.1.1cu121, 0.7.5+pt2.1.2cpu, 0.7.5+pt2.1.2cu118, 0.7.5+pt2.1.2cu121, 0.7.5+pt2.2.0cpu, 0.7.5+pt2.2.0cu118, 0.7.5+pt2.2.0cu121, 0.7.5+pt2.2.1cpu, 0.7.5+pt2.2.1cu118, 0.7.5+pt2.2.1cu121, 0.7.5+pt2.2.2cpu, 0.7.5+pt2.2.2cu118, 0.7.5+pt2.2.2cu121, 0.7.5+pt2.3.0cpu, 0.7.5+pt2.3.0cu118, 0.7.5+pt2.3.0cu121, 0.7.5+pt2.3.1cpu, 0.7.5+pt2.3.1cu118, 0.7.5+pt2.3.1cu121, 0.7.6+pt1.13.0cpu, 0.7.6+pt1.13.0cu116, 0.7.6+pt1.13.0cu117, 0.7.6+pt1.13.1cpu, 0.7.6+pt1.13.1cu116, 0.7.6+pt1.13.1cu117, 0.7.6+pt2.0.0cpu, 0.7.6+pt2.0.0cu117, 0.7.6+pt2.0.0cu118, 0.7.6+pt2.0.1cpu, 0.7.6+pt2.0.1cu117, 0.7.6+pt2.0.1cu118, 0.7.6+pt2.1.0cpu, 0.7.6+pt2.1.0cu118, 0.7.6+pt2.1.0cu121, 0.7.6+pt2.1.1cpu, 0.7.6+pt2.1.1cu118, 0.7.6+pt2.1.1cu121, 0.7.6+pt2.1.2cpu, 0.7.6+pt2.1.2cu118, 0.7.6+pt2.1.2cu121, 0.7.6+pt2.2.0cpu, 0.7.6+pt2.2.0cu118, 0.7.6+pt2.2.0cu121, 0.7.6+pt2.2.1cpu, 0.7.6+pt2.2.1cu118, 0.7.6+pt2.2.1cu121, 0.7.6+pt2.2.2cpu, 0.7.6+pt2.2.2cu118, 0.7.6+pt2.2.2cu121, 0.7.6+pt2.3.0cpu, 0.7.6+pt2.3.0cu118, 0.7.6+pt2.3.0cu121, 0.7.6+pt2.3.1cpu, 0.7.6+pt2.3.1cu118, 0.7.6+pt2.3.1cu121, 0.7.7+pt1.13.0cpu, 0.7.7+pt1.13.0cu116, 0.7.7+pt1.13.0cu117, 0.7.7+pt1.13.1cpu, 0.7.7+pt1.13.1cu116, 0.7.7+pt1.13.1cu117, 0.7.7+pt2.0.0cpu, 0.7.7+pt2.0.0cu117, 0.7.7+pt2.0.0cu118, 0.7.7+pt2.0.1cpu, 0.7.7+pt2.0.1cu117, 0.7.7+pt2.0.1cu118, 0.7.7+pt2.1.0cpu, 0.7.7+pt2.1.0cu118, 0.7.7+pt2.1.0cu121, 0.7.7+pt2.1.1cpu, 0.7.7+pt2.1.1cu118, 0.7.7+pt2.1.1cu121, 0.7.7+pt2.1.2cpu, 0.7.7+pt2.1.2cu118, 0.7.7+pt2.1.2cu121, 0.7.7+pt2.2.0cpu, 0.7.7+pt2.2.0cu118, 0.7.7+pt2.2.0cu121, 0.7.7+pt2.2.1cpu, 0.7.7+pt2.2.1cu118, 0.7.7+pt2.2.1cu121, 0.7.7+pt2.2.2cpu, 0.7.7+pt2.2.2cu118, 0.7.7+pt2.2.2cu121, 0.7.7+pt2.3.0cpu, 0.7.7+pt2.3.0cu118, 0.7.7+pt2.3.0cu121, 0.7.7+pt2.3.1cpu, 0.7.7+pt2.3.1cu118, 0.7.7+pt2.3.1cu121, 0.7.7+pt2.4.0cpu, 0.7.7+pt2.4.0cu118, 0.7.7+pt2.4.0cu121, 0.7.7+pt2.4.0cu124, 0.7.7+pt2.4.1cpu, 0.7.7+pt2.4.1cu118, 0.7.7+pt2.4.1cu121, 0.7.7+pt2.4.1cu124, 0.7.8+pt1.13.0cpu, 0.7.8+pt1.13.0cu116, 0.7.8+pt1.13.0cu117, 0.7.8+pt1.13.1cpu, 0.7.8+pt1.13.1cu116, 0.7.8+pt1.13.1cu117, 0.7.8+pt2.0.0cpu, 0.7.8+pt2.0.0cu117, 0.7.8+pt2.0.0cu118, 0.7.8+pt2.0.1cpu, 0.7.8+pt2.0.1cu117, 0.7.8+pt2.0.1cu118, 0.7.8+pt2.1.0cpu, 0.7.8+pt2.1.0cu118, 0.7.8+pt2.1.0cu121, 0.7.8+pt2.1.1cpu, 0.7.8+pt2.1.1cu118, 0.7.8+pt2.1.1cu121, 0.7.8+pt2.1.2cpu, 0.7.8+pt2.1.2cu118, 0.7.8+pt2.1.2cu121, 0.7.8+pt2.2.0cpu, 0.7.8+pt2.2.0cu118, 0.7.8+pt2.2.0cu121, 0.7.8+pt2.2.1cpu, 0.7.8+pt2.2.1cu118, 0.7.8+pt2.2.1cu121, 0.7.8+pt2.2.2cpu, 0.7.8+pt2.2.2cu118, 0.7.8+pt2.2.2cu121, 0.7.8+pt2.3.0cpu, 0.7.8+pt2.3.0cu118, 0.7.8+pt2.3.0cu121, 0.7.8+pt2.3.1cpu, 0.7.8+pt2.3.1cu118, 0.7.8+pt2.3.1cu121, 0.7.8+pt2.4.0cpu, 0.7.8+pt2.4.0cu118, 0.7.8+pt2.4.0cu121, 0.7.8+pt2.4.0cu124, 0.7.8+pt2.4.1cpu, 0.7.8+pt2.4.1cu118, 0.7.8+pt2.4.1cu121, 0.7.8+pt2.4.1cu124, 0.7.8+pt2.5.0cpu, 0.7.8+pt2.5.0cu118, 0.7.8+pt2.5.0cu121, 0.7.8+pt2.5.0cu124, 0.7.8+pt2.5.1cpu, 0.7.8+pt2.5.1cu118, 0.7.8+pt2.5.1cu121, 0.7.8+pt2.5.1cu124, 0.7.8+pt2.6.0cpu, 0.7.8+pt2.6.0cu118, 0.7.8+pt2.6.0cu124, 0.7.8+pt2.6.0cu126, 0.7.8+pt2.7.0cpu, 0.7.8+pt2.7.0cu118, 0.7.8+pt2.7.0cu126, 0.7.8+pt2.7.0cu128)\u001b[0m\u001b[31m\n",
+            "\u001b[0m\u001b[31mERROR: No matching distribution found for pytorch3d==0.7.8+pt210cu118\u001b[0m\u001b[31m\n",
+            "\u001b[0m"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [
+        "import pytorch3d\n",
+        "!pip install trimesh\n",
+        "load_stl_with_trimesh = True"
+      ],
+      "metadata": {
+        "colab": {
+          "base_uri": "https://localhost:8080/"
+        },
+        "id": "qzG9XBsu4DXw",
+        "outputId": "507962a9-c261-45ee-e400-7fd40e220914"
+      },
+      "execution_count": null,
+      "outputs": [
+        {
+          "output_type": "stream",
+          "name": "stdout",
+          "text": [
+            "Requirement already satisfied: trimesh in /usr/local/lib/python3.11/dist-packages (4.6.13)\n",
+            "Requirement already satisfied: numpy>=1.20 in /usr/local/lib/python3.11/dist-packages (from trimesh) (2.0.2)\n"
+          ]
+        }
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "hxcNpVPYYdxw"
+      },
+      "outputs": [],
+      "source": [
+        "import os\n",
+        "#import torch\n",
+        "from pytorch3d.io import load_obj, save_obj\n",
+        "from pytorch3d.structures import Meshes\n",
+        "from pytorch3d.utils import ico_sphere\n",
+        "from pytorch3d.ops import sample_points_from_meshes\n",
+        "from pytorch3d.loss import (\n",
+        "    chamfer_distance,\n",
+        "    mesh_edge_loss,\n",
+        "    mesh_laplacian_smoothing,\n",
+        "    mesh_normal_consistency,\n",
+        ")\n",
+        "import numpy as np\n",
+        "from tqdm.notebook import tqdm\n",
+        "%matplotlib notebook\n",
+        "from mpl_toolkits.mplot3d import Axes3D\n",
+        "import matplotlib.pyplot as plt\n",
+        "import matplotlib as mpl\n",
+        "mpl.rcParams['savefig.dpi'] = 80\n",
+        "mpl.rcParams['figure.dpi'] = 80\n",
+        "\n",
+        "# Setting the device(CUDA)\n",
+        "if torch.cuda.is_available():\n",
+        "    device = torch.device(\"cuda:0\")\n",
+        "else:\n",
+        "    device = torch.device(\"cpu\")\n",
+        "    print(\"WARNING: CPU only, this will be slow!\")"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "_ZR3hDVH3pUP"
+      },
+      "outputs": [],
+      "source": [
+        "# from pytorch3d.io import load_obj\n",
+        "# from pytorch3d.structures import Meshes\n",
+        "# import torch\n",
+        "# import io\n",
+        "\n",
+        "# device = torch.device(\"cuda:0\" if torch.cuda.is_available() else \"cpu\")\n",
+        "\n",
+        "# # ------------------------------------------------------------\n",
+        "# # Option 1: Load with encoding + normal filtering\n",
+        "# # ------------------------------------------------------------\n",
+        "# def load_obj_safely(file_path):\n",
+        "#     cleaned_lines = []\n",
+        "#     with open(file_path, \"r\", encoding='latin-1') as f:\n",
+        "#         for line in f:\n",
+        "#             if line.startswith(\"vn \"):\n",
+        "#                 parts = line.strip().split()\n",
+        "#                 if len(parts) == 4:  # \"vn\" + 3 values\n",
+        "#                     cleaned_lines.append(line)\n",
+        "#                 else:\n",
+        "#                     print(f\"Skipping invalid normal: {line.strip()}\")\n",
+        "#             else:\n",
+        "#                 cleaned_lines.append(line)\n",
+        "\n",
+        "#     file_obj = io.StringIO(\"\".join(cleaned_lines))\n",
+        "#     return load_obj(file_obj)\n",
+        "\n",
+        "# verts, faces, aux = load_obj_safely(trg_obj)\n",
+        "\n",
+        "# # ------------------------------------------------------------\n",
+        "# # Option 2: Use trimesh (uncomment if needed)\n",
+        "# # ------------------------------------------------------------\n",
+        "# # import trimesh\n",
+        "# # mesh = trimesh.load(trg_obj, process=False, maintain_order=True)\n",
+        "# # verts = torch.tensor(mesh.vertices, dtype=torch.float32)\n",
+        "# # faces_idx = torch.tensor(mesh.faces, dtype=torch.int64)\n",
+        "# # verts = verts.to(device)\n",
+        "# # faces_idx = faces_idx.to(device)\n",
+        "\n",
+        "# # ------------------------------------------------------------\n",
+        "# # Process vertices and faces\n",
+        "# # ------------------------------------------------------------\n",
+        "# faces_idx = faces.verts_idx.to(device)\n",
+        "# verts = verts.to(device)\n",
+        "\n",
+        "# # Center and scale the mesh\n",
+        "# center = verts.mean(0)\n",
+        "# verts = verts - center\n",
+        "# scale = max(verts.abs().max(0)[0])\n",
+        "# verts = verts / scale\n",
+        "\n",
+        "# # Create the PyTorch3D mesh\n",
+        "# trg_mesh = Meshes(verts=[verts], faces=[faces_idx])"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "OnqWZQaOYkrZ"
+      },
+      "outputs": [],
+      "source": [
+        "#Loading .obj object and creating mesh object\n",
+        "\n",
+        "#!wget https://dl.fbaipublicfiles.com/pytorch3d/data/dolphin/dolphin.obj\n",
+        "\n",
+        "# Loading the dolphin mesh.\n",
+        "trg_stl = os.path.join('/content/040_m_77y_OK_proth.stl')\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "bZeN6FMOMa8d"
+      },
+      "outputs": [],
+      "source": [
+        "from pytorch3d.structures import Meshes\n",
+        "import torch\n",
+        "import trimesh\n",
+        "\n",
+        "device = torch.device(\"cuda:0\" if torch.cuda.is_available() else \"cpu\")\n",
+        "\n",
+        "def load_stl_with_trimesh(file_path):\n",
+        "    # Load STL file using trimesh\n",
+        "    mesh = trimesh.load(file_path, process=False, maintain_order=True)\n",
+        "\n",
+        "    # Convert to PyTorch tensors\n",
+        "    verts = torch.tensor(mesh.vertices, dtype=torch.float32)\n",
+        "    faces_idx = torch.tensor(mesh.faces, dtype=torch.int64)\n",
+        "\n",
+        "    return verts, faces_idx\n",
+        "\n",
+        "# Load your STL file\n",
+        "verts, faces_idx = load_stl_with_trimesh(trg_stl)\n",
+        "\n",
+        "# Move to device\n",
+        "verts = verts.to(device)\n",
+        "faces_idx = faces_idx.to(device)\n",
+        "\n",
+        "# Center and scale the mesh\n",
+        "center = verts.mean(0)\n",
+        "verts = verts - center\n",
+        "scale = max(verts.abs().max(0)[0])\n",
+        "verts = verts / scale\n",
+        "\n",
+        "# Create the PyTorch3D mesh\n",
+        "trg_mesh = Meshes(verts=[verts], faces=[faces_idx])\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "KOglvppwMs-a"
+      },
+      "outputs": [],
+      "source": [
+        "# Load the target 3D model using trimesh for STL support\n",
+        "import trimesh\n",
+        "\n",
+        "def load_stl_safely(file_path):\n",
+        "    \"\"\"Load STL file and return vertices and faces for PyTorch3D\"\"\"\n",
+        "    mesh = trimesh.load(file_path, process=True)\n",
+        "    verts = torch.tensor(mesh.vertices, dtype=torch.float32)\n",
+        "    faces_idx = torch.tensor(mesh.faces, dtype=torch.int64)\n",
+        "    return verts, faces_idx\n",
+        "\n",
+        "# Load your STL file\n",
+        "verts, faces_idx = load_stl_safely(trg_stl)  # Changed from trg_obj to trg_stl_file\n",
+        "\n",
+        "# Move tensors to device\n",
+        "faces_idx = faces_idx.to(device)  # Direct assignment since we already have faces_idx\n",
+        "verts = verts.to(device)\n",
+        "\n",
+        "# Center and scale the mesh\n",
+        "center = verts.mean(0)\n",
+        "verts = verts - center\n",
+        "scale = max(verts.abs().max(0)[0])\n",
+        "verts = verts / scale\n",
+        "\n",
+        "# Construct a Meshes structure for the target mesh\n",
+        "trg_mesh = Meshes(verts=[verts], faces=[faces_idx])\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "pnTFC24jZToS"
+      },
+      "outputs": [],
+      "source": [
+        "# We initialize the source shape to be a sphere of radius 1\n",
+        "src_mesh = ico_sphere(4, device)"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "-Ey1ci9yZoIc"
+      },
+      "outputs": [],
+      "source": [
+        "#visualizing the source and target meshes\n",
+        "def plot_pointcloud(mesh, title=\"\"):\n",
+        "    # Sampling points uniformly from the surface of the mesh.\n",
+        "    points = sample_points_from_meshes(mesh, 5000)\n",
+        "    x, y, z = points.clone().detach().cpu().squeeze().unbind(1)\n",
+        "    fig = plt.figure(figsize=(5, 5))\n",
+        "    ax = Axes3D(fig)\n",
+        "    ax.scatter3D(x, z, -y)\n",
+        "    ax.set_xlabel('x')\n",
+        "    ax.set_ylabel('z')\n",
+        "    ax.set_zlabel('y')\n",
+        "    ax.set_title(title)\n",
+        "    ax.view_init(190, 30)\n",
+        "    plt.show()"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "2fpHo3vEZ09D",
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 52
+        },
+        "outputId": "43997763-79d6-424b-9c57-0724f7cce10c"
+      },
+      "outputs": [
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        }
+      ],
+      "source": [
+        "# %matplotlib notebook\n",
+        "plot_pointcloud(trg_mesh, \"Target mesh\")\n",
+        "plot_pointcloud(src_mesh, \"Source mesh\")"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "qUH2ga4lZ32s"
+      },
+      "outputs": [],
+      "source": [
+        "#Optimization Loop\n",
+        "#deforming source mesh by offsetting its vertices\n",
+        "deform_verts = torch.full(src_mesh.verts_packed().shape, 0.0, device=device, requires_grad=True)\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "tpWleWrzaDob"
+      },
+      "outputs": [],
+      "source": [
+        "# The optimizer\n",
+        "optimizer = torch.optim.SGD([deform_verts], lr=1.0, momentum=0.9)\n"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "tIzdvsSIaGMR",
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 535,
+          "referenced_widgets": [
+            "9ffc342e63014c9c9f3f6a1214dbef96",
+            "add1b34b2d3e4a60b66d0d6ff45d2446",
+            "ebdd0ec30b1a467082a4913084fa1aba",
+            "d3db434f227647d9a16b9579321d37fa",
+            "2b69b8f655334f9a91907d398a322b07",
+            "f36f319a149a4d22b3fdcc07ca471aa4",
+            "062450fcd78f45d5b5e7a0a960ea7a7b",
+            "02adddf990d24795a9e50690c3110b00",
+            "4be4c6d389ea418485f3213991562be8",
+            "5a346293e28646ccbf8a89f5957c1fac",
+            "e241f6cd1b87425091fa31e64f7787db"
+          ]
+        },
+        "outputId": "c6ffb1b1-435f-47a1-cd72-d3e5fac3e72d"
+      },
+      "outputs": [
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "  0%|          | 0/7000 [00:00<?, ?it/s]"
+            ],
+            "application/vnd.jupyter.widget-view+json": {
+              "version_major": 2,
+              "version_minor": 0,
+              "model_id": "9ffc342e63014c9c9f3f6a1214dbef96"
+            }
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        },
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 400x400 with 0 Axes>"
+            ]
+          },
+          "metadata": {}
+        }
+      ],
+      "source": [
+        "# Number of optimization steps\n",
+        "Niter = 7000\n",
+        "# Weight for the chamfer loss\n",
+        "w_chamfer = 1.0\n",
+        "# Weight for mesh edge loss\n",
+        "w_edge = 1.0\n",
+        "# Weight for mesh normal consistency\n",
+        "w_normal = 0.01\n",
+        "# Weight for mesh laplacian smoothing\n",
+        "w_laplacian = 0.1\n",
+        "# Plot period for the losses\n",
+        "plot_period = 250\n",
+        "loop = tqdm(range(Niter))\n",
+        "\n",
+        "chamfer_losses = []\n",
+        "laplacian_losses = []\n",
+        "edge_losses = []\n",
+        "normal_losses = []\n",
+        "\n",
+        "%matplotlib inline\n",
+        "\n",
+        "for i in loop:\n",
+        "    # Initializing optimizer\n",
+        "    optimizer.zero_grad()\n",
+        "\n",
+        "    # Deforming the mesh\n",
+        "    new_src_mesh = src_mesh.offset_verts(deform_verts)\n",
+        "\n",
+        "    # Sampling 5k points from the surface of each mesh\n",
+        "    sample_trg = sample_points_from_meshes(trg_mesh, 10000)\n",
+        "    sample_src = sample_points_from_meshes(new_src_mesh, 10000)\n",
+        "\n",
+        "    # comparing the two sets of pointclouds by computing: (a) the chamfer loss\n",
+        "    loss_chamfer, _ = chamfer_distance(sample_trg, sample_src)\n",
+        "\n",
+        "    # and (b) the edge length of the predicted mesh\n",
+        "    loss_edge = mesh_edge_loss(new_src_mesh)\n",
+        "\n",
+        "    # mesh normal consistency\n",
+        "    loss_normal = mesh_normal_consistency(new_src_mesh)\n",
+        "\n",
+        "    # mesh laplacian smoothing\n",
+        "    loss_laplacian = mesh_laplacian_smoothing(new_src_mesh, method=\"uniform\")\n",
+        "\n",
+        "    # Weighted sum of the losses\n",
+        "    loss = loss_chamfer * w_chamfer + loss_edge * w_edge + loss_normal * w_normal + loss_laplacian * w_laplacian\n",
+        "\n",
+        "    # Print the losses\n",
+        "    loop.set_description('total_loss = %.6f' % loss)\n",
+        "\n",
+        "    # Save the losses for plotting\n",
+        "    chamfer_losses.append(float(loss_chamfer.detach().cpu()))\n",
+        "    edge_losses.append(float(loss_edge.detach().cpu()))\n",
+        "    normal_losses.append(float(loss_normal.detach().cpu()))\n",
+        "    laplacian_losses.append(float(loss_laplacian.detach().cpu()))\n",
+        "\n",
+        "    # Plot mesh\n",
+        "    if i % plot_period == 0:\n",
+        "        plot_pointcloud(new_src_mesh, title=\"iter: %d\" % i)\n",
+        "\n",
+        "    # Optimization step\n",
+        "    loss.backward()\n",
+        "    optimizer.step()"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "LWk2-YWDas9a",
+        "colab": {
+          "base_uri": "https://localhost:8080/",
+          "height": 401
+        },
+        "outputId": "af791a6d-45cc-4f10-8eb0-e4120058ade6"
+      },
+      "outputs": [
+        {
+          "output_type": "display_data",
+          "data": {
+            "text/plain": [
+              "<Figure size 1040x400 with 1 Axes>"
+            ],
+            "image/png": "iVBORw0KGgoAAAANSUhEUgAAA2wAAAGACAYAAADRdeGBAAAAOnRFWHRTb2Z0d2FyZQBNYXRwbG90bGliIHZlcnNpb24zLjEwLjAsIGh0dHBzOi8vbWF0cGxvdGxpYi5vcmcvlHJYcgAAAAlwSFlzAAAMTgAADE4Bf3eMIwAAeYZJREFUeJzt3Xd8FNX6x/HPbDY9EEoIxZAGhG4CgghIF6RIUa6KSiR6EcTCVeSCBRUQERvWS7EBgo2fgAIWCAKKDUTEQi8JSeidACHJZuf3R5IlSwohJOxCvm9f+8ruOWfOPLOzCT57zpwxTNM0EREREREREbdjcXUAIiIiIiIiUjAlbCIiIiIiIm5KCZuIiIiIiIibUsImIiIiIiLippSwiYiIiIiIuCklbCIiIiIiIm5KCZuIiIiIiIibUsImIiJSDDNnzsQwDFauXOnqUErkco9fRKS8UsImIiJOVq5ciWEYvP76664Oxe2tXLmSsWPHcuzYMVeHAkBiYiJjx45l/fr1rg5FRERKiRI2ERGRYoiNjSUtLY327ds7ylauXMm4cePcKmEbN25cgQlbQfGLiIj7s7o6ABERkcuBh4cHHh4el2x/p06dwtfXF4uldL5bvdTxi4hI6dAIm4iIlNj333/PDTfcQMWKFfHz86Nly5Z88skn+dr9+OOP3HjjjQQHB+Pj40NISAh9+vTh77//drTZtWsXcXFxhIaG4u3tTfXq1WnXrh3z5s0rMobbb78dX19fTpw4ka9u6dKlGIbBW2+9BYDdbufVV1+ladOmBAQEEBgYSMOGDXnooYfOe6znXgMWFxfHuHHjAIiIiMAwDAzDYObMmY5tdu/ezZAhQwgJCcHLy4vQ0FAeffRRUlNTnfqOi4vDMAz279/PoEGDqFatGgEBAZw4cQK73c7zzz9Pu3btqF69Ol5eXkRGRjJy5EhOnTrlFF+nTp0AuOeeexzxxMXFFRh/roSEBAYOHEj16tXx9vYmKiqKcePGkZGRUWCMx44dY8iQIQQFBeHr60uXLl3YtGmTU9u0tDSeeeYZoqKi8PX1pXLlykRHR/Pcc8+d930WERFnGmETEZESWbRoETfffDO1atXiv//9L/7+/syZM4c777yTlJQU/vvf/wKwefNmunXrRr169Rg1ahSVK1dm7969rFixgs2bN9O0aVNsNhvdunXj2LFj3H///YSFhXH48GH++OMPfvnlF/r3719oHLGxscydO5fPP/+ce++916lu9uzZeHp6cscddwAwYcIEnn32WWJjY3nwwQex2+3s2LGDb7/99oKPf+jQoZw4cYIFCxbw2muvERQUBECbNm2A7OmJrVu3xjRNBg8eTGhoKBs2bGDq1Kn88ssvrFq1Ck9PT6c+u3XrRu3atXn22Wc5ceIEXl5eZGRk8Morr/Cvf/2LW265BW9vb1atWsXkyZNZv349y5YtA6B9+/Y8+eSTTJw4kSFDhtCuXTsA6tSpU+gx7Nq1i1atWpGamsoDDzxAZGQky5YtY+zYsfz2228sWrQIwzCctrnxxhupVasW48ePJzk5mddee42+ffuyadMmxwjegw8+yOzZsxk6dCjR0dGcOXOGLVu2sGLFCp5++ukLfq9FRMo1U0REJI8VK1aYgPnaa68V2sZms5mhoaFm5cqVzb179zrK09LSzGbNmpleXl7mnj17TNM0zTfeeMMEzP379xfa359//mkC5meffXbB8WZmZprVqlUzO3Xq5FR+8uRJ09/f3+zdu7ejrFmzZmaPHj0ueB+maZozZswwAXPFihWOsmeffdYEzISEhHztb7rpJrNGjRpO749pmuaXX35pAuYHH3zgKBs0aJAJmIMGDcrXj91uN0+fPp2v/JlnnjEB85dffnGU5Z67GTNmFCv+O++80wTMJUuWOLW9//77TcD8/PPP88X48MMPO7V95ZVXTMD85ptvHGWVK1c2hw0bli8GERG5cJoSKSIiF+z3338nKSmJwYMHU6NGDUe5j48Pjz32GBkZGXz11VcABAYGAjBv3jxsNluB/eW2+eabbzh+/PgFxWK1WhkwYAArV64kJSXFUb5gwQJOnTpFbGys0342bNjgNBWzLBw7doyvv/6afv36YbVaOXTokOPRpk0b/P39iY+Pz7fdiBEj8pUZhoGvry8ANpuNo0ePcujQITp37gzAmjVrShSj3W5n4cKFtGzZkm7dujnVjRkzBsh+D881fPhwp9e50zC3b9/uKAsMDGT16tUkJiaWKDYRETlLCZuIiFywhIQEABo3bpyvLrds586dAAwYMIAbbriBBx54gCpVqtCjRw/eeOMN9u/f79gmLCyMp556ilmzZlGtWjXatGnDM888wz///FOseGJjYzFNk48++shRNmfOHAIDA+ndu7ejbOLEiaSlpXH11VcTGRnJv//9bxYsWIDdbr/wN6EIW7duxW63M23aNKpVq5bvcerUKafjz1W3bt0C+/vkk09o0aIFvr6+VKlShWrVqtGxY0eAEq9QefDgQU6ePFngObzqqqsIDAx0nMO8IiIinF5XqVIFgMOHDzvKXnvtNbZu3UpERASNGjXioYceKjBBFRGR81PCJiIiZcrb25v4+Hh+/fVXx+jbyJEjiYqKcloAY8KECWzbto1XXnmFmjVr8sYbbxAdHc0rr7xy3n20bNmSBg0aMGfOHAD27dvHsmXLuPXWW/Hx8XG0a926NTt37uTzzz+ne/fu/Pjjj9xyyy20adOGtLS0Ujvm3ARw0KBBxMfHF/h46aWX8m3n5+eXr2zevHnceeedeHl58fbbb7N48WLi4+Mdi5uUdrJ5PoWtNGmapuN5v379SExM5MMPP6R169YsXLiQbt26cfPNN1/yeEVELndadERERC5YZGQkABs3bsxXl1uW2yZXq1ataNWqFQDbtm2jWbNmjB071ilpq1OnDsOHD2f48OGcPHmSDh068OSTTzJ8+HC8vLyKjCk2NpannnqK9evXs2LFCrKysrj77rvztQsICKB///6OhUxeeOEFnnzyST777DPHiorFde6CHLnq1q2LYRjYbDZuuOGGC+rzXHPmzMHHx4fvvvvOMTUSYMmSJcWOpyDVqlWjQoUKBZ7DPXv2cPz48Xzn8EJUrVqV2NhYx+jnAw88wLRp0/jhhx8co4MiInJ+GmETEZEL1rx5c0JDQ/nggw84ePCgozw9PZ3Jkyfj5eVFr169ADh06FC+7SMjIwkMDHRMozt+/DiZmZlObQICAqhXrx6ZmZn5lsEvyF133YVhGMyePZvZs2cTHh7O9ddf79SmoFiaNWsGOE/pK66AgAAAjh496lQeFBRE9+7dmTt3LuvWrcu3nc1m48iRI8Xah4eHB4ZhkJWV5SjLysri5ZdfLnY8BbFYLPTu3Zs1a9awYsUKp7qJEycCcPPNNxcrxryysrLyTdM0DIPo6GigZO+ziEh5phE2EREpUHx8PCdPnsxXHhERwV133cXbb7/NzTffTMuWLbnvvvvw8/Njzpw5rFu3jpdeeomaNWsC2VMdly5dSu/evYmIiMBmszF//nz27NnDf/7zHwBWrFjB0KFD6d+/P/Xr18fPz49ffvmFuXPn0qNHD6pWrXreeMPCwmjfvj3vvfceJ06cYMyYMflGnBo2bEjr1q259tprqVWrFikpKUydOhV/f/8SJSe5I4ZPPPEEd9xxB97e3rRq1YqIiAimTp3K9ddfT5s2bYiLiyM6Opr09HS2b9/O/PnzmThxYrFG9G655RbmzZtH586dGTRoEGlpaXz22WdOUxBzNWrUiICAAKZMmYKfnx+BgYFEREQ44jzXxIkTiY+Pp1evXjz44INERESwbNkyFixYQK9evbjlllsu+D1JTU2lZs2a9O3bl5iYGIKDg9m2bRtTpkyhZs2adOnS5YL7FBEp11y7SKWIiLib3KXhC3t06dLFqW3nzp3NgIAA08fHx2zRooX50UcfOfW3fPly89ZbbzVDQ0NNHx8fs0qVKmbr1q3N2bNnO9rs3LnTHDJkiNmgQQMzICDA9Pf3Nxs1amQ+99xz5qlTp4od+3vvveeIc8uWLfnqX3jhBfP66683g4KCTC8vL7N27drmHXfcYf7zzz/n7bugZfFN0zSff/55MzQ01PTw8Mi3pP6BAwfMRx55xIyMjDS9vLzMKlWqmM2aNTNHjx5tJiUlOdrlLplfmClTppj169c3vb29zZCQEPOxxx4zN2zYYALms88+69R24cKF5tVXX216eXk53SqgsPh37txp3nnnnWZQUJDp6elp1q1b1xw7dqyZnp7u1K6wGBMSEpziSE9PNx9//HGzRYsWZuXKlU1vb28zPDzcHDp0qLlr165Cj1FERApmmGYBX9GJiIiIiIiIy+kaNhERERERETelhE1ERERERMRNKWETERERERFxU0rYRERERERE3JQSNhERERERETfl8vuwbdu2jUGDBnHo0CECAwOZOXMmjRs3dmrzyy+/MGzYMAAyMzO5/vrrefPNN/H29mblypX06NGD+vXrO7X39fU97769vb2pVq1a6R6QiIiIiIjIBTh48CDp6ekF1rk8YRs6dChDhgwhLi6Ozz//nLi4OH777TenNtHR0fz22294enpit9vp378/U6ZM4dFHHwWgfv36rF+//oL3Xa1aNVJSUkrjMEREREREREokJCSk0DqXTok8cOAAa9euZeDAgQD079+f5ORktm/f7tTOz88PT09PADIyMkhLS8MwjEser4iIiIiIyKXk0oQtOTmZmjVrYrVmD/QZhkFoaChJSUn52iYmJhIdHU1QUBCBgYE88MAD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Qf73v//RrFkzfv/9d6cRvalTp3L99dfTpk0b4uLiiI6OJj09ne3btzN//nwmTpzoGOUqrq5du3Lbbbcxa9YsDh06RI8ePUhJSeHtt98mMDCQV1991dG2YcOGtG7dmmuvvZZatWqRkpLC1KlT8ff35+abbwbgvvvuY8+ePXTt2pWwsDBOnjzJnDlzsNlsTqtmlgdK2NyIxZK76IiLAxERERGRUufl5cU333zDW2+9xZw5cxgzZgweHh7UqlWLdu3acd999znaVq5cmVWrVjFixAhHEtehQwdWrFhBly5d8vU9ZcoUatWqxfvvv8/IkSOpX78+U6dOZc2aNfz++++O0S2AsLAw1q1bx8SJE1m4cCEzZswgICCAsLAw7r777gL7L46PPvqImJgYZs2axYgRI6hQoQI9evRgwoQJjnuwATz22GN89dVXvPHGG5w4cYLq1avTqVMnnnrqKcd942JjY5kxYwYzZ87k4MGDBAYG0rRpU7766it69uxZovguV7oPmxvdh232L4k8/eUGPh7cijZ1g86/gYiIiMhlrrj3qZKS6d27N8uXL+fEiRN6f12gNO7DpmvY3Ihj0REXxyEiIiIil5e0tLR8ZX/99RfffPMNnTt3VrJ2GdOUSDei+7CJiIiISEl88MEHfPzxx/Ts2ZNq1aqxefNm3nnnHby8vBg/fryrw5OLoITNjZy9D5tr4xARERGRy0vz5s358ssvefPNNzl69CgVKlSgS5cuPPvss44VGOXypITNjZxd1l8Zm4iIiIgUX+vWrVm6dKmrw5AyoGvY3IiBbpwtIiIiIiJnKWFzI44pkVp2REREREREUMLmVhyLjtjP01BERERERMoFJWxu5OwIm4iIiIiIiBI2t6Jl/UVEREREJC8lbG7k7LL+SthEREREREQJm1sxDK0SKSIiIiIiZylhcyNn78Pm2jhEREREREoqPDycjh07nrfdzJkzMQyDlStXlnlMlzMlbG7EcR82LTsiIiIiIiIoYXMrGmETEREREZG8lLC5ES06IiIiIiKlwW63c+rUKVeHIaVACZsb0aIjIiIiIleu3Gu2li9fzksvvURERATe3t40adKEhQsX5mtvs9mYNGkSDRs2xNvbm2rVqnH77bezbds2p3YrV67EMAxmzJjBG2+8QYMGDfDx8eHdd98lMTERwzAYO3Ysn332GU2bNsXX15eGDRvyxRdfAPDnn3/StWtXAgICCA4O5plnnsk3gLB06VJuv/12IiIi8PHxoUqVKvTu3Zs//vij1N+nhIQEBg4cSPXq1fH29iYqKopx48aRkZHh1G7Xrl3ExcURGhqKt7c31atXp127dsybN8/RJi0tjWeeeYaoqCh8fX2pXLky0dHRPPfcc6Ued1mxujoAOUv3YRMRERG58j3xxBPYbDYeeughTNPk9ddfp3///mzZsoXIyEhHu7vuuou5c+fSvXt3HnzwQVJSUvjf//7H0qVLWb16NVFRUU79vv766xw/fpzBgwdTrVo1p/rFixfz3nvvMWzYMAICAnj77bf517/+xdy5c7n//vuJjY3llltuYf78+Tz33HPUqVOHQYMGObafOXMmx44d45577qFWrVokJCTwzjvvcP3117Nu3Trq169fKu/Nrl27aNWqFampqTzwwANERkaybNkyxo4dy2+//caiRYswDAObzUa3bt04duwY999/P2FhYRw+fJg//viDX375hf79+wPw4IMPMnv2bIYOHUp0dDRnzpxhy5YtrFixgqeffrpUYi5rStjcSM6MSI2wiYiIiAAPf/cwyanJrg7DSe0KtXmry1sX1YfNZuPXX3/F09MTgE6dOtGiRQveeecdJk2aBEB8fDxz587lzjvvZM6cOY6ZWP369aNNmzY89thjLFq0yKnf3bt3s3nzZoKCghxliYmJAGzZsoXNmzdz1VVXAXDDDTfQpEkT/vWvf7Fw4UJuuukmAAYPHkxYWBhTp051Stjeffdd/P39nfZ39913c/XVV/Paa68xbdq0i3pPcj355JMcPHiQJUuW0K1bNyA76Ro2bBjTpk1j/vz59O/fn40bN7J161Y+++wzbrvttkL7++KLL7jvvvt4++23SyU+V9CUSDdiyTkbGmETERERuXINGzbMkawBXHPNNVSoUIHt27c7yhYsWADAU0895UjWAK677jq6dOnCt99+S1pamlO/d999t1Oylle/fv0cyRpA48aNCQwMJCQkxJGsAXh6enLttdfmm3aZN1lLTU3l0KFDVK1alfr167NmzZoLOfxC2e12Fi5cSMuWLR3JWq4xY8YAZ9+XwMBAAL755huOHz9eaJ+BgYGsXr3akbhejjTC5kYcy/orXxMRERG56JEsdxUREZGvrEqVKhw+fNjxOiEhAavVWuBUw8aNG7Ns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9thjREdHU6lSJXx9fYmOjmbq1Kn52o4dOxbDMPjnn3944IEHCA4Oxs/Pjw4dOrB27drz7is1NZUxY8Zw7bXXUrVqVXx8fGjQoAHPP/88NpstX/szZ84wYcIEmjRpgq+vL1WqVKFt27Z8+umnjjYFXcO2Zs0a4uLiqFevHn5+fgQGBtK5c2eWL1+ebx8dO3YkPDyc3bt3c9tttxEYGEiFChW4+eab2bNnT3HewkK98847NGvWDF9fXypVqkTPnj0LfJ9mzJhBixYtCAwMJCAggLp16zJo0CBOnTrlaPPjjz9y4403EhwcjI+PDyEhIfTp04e///77omIsDo2wuZGzI2yujUNERERELo2//vqLBQsWcMstt1CnTh3S0tKYN28eDzzwAIcPH2bMmDH5tomNjcXX15ennnqKw4cP89Zbb9GpUyd+/fVXGjduXOi+du/ezfvvv8+//vUv7r77bux2O0uWLGHMmDEkJCTw3nvvOdqmp6fTpUsXfv75Z3r16sXgwYMxDIN169axePFiBgwYUOh+FixYwNatW7njjjuoXbs2+/bt47333qNr164sX76cDh06OLU/deoUHTp0oF27drz44ov8888/TJ06lRMnTvDdd9+V4F2F0aNH89JLL9G6dWteeOEFjh07xtSpU7n++uuJj4+nXbt2AHz44Yfce++93HTTTdx7771YrVYSExNZtGgRqamp+Pv7s3nzZrp160a9evUYNWoUlStXZu/evaxYsYLNmzfTtGnTEsVYXErY3IiRs+yIqWVHREREREge9gAZyUmuDsOJV+1Qak+dUmr9dejQgR07djiNUj366KN07tyZl19+mVGjRuHl5eW0jY+PD99//71jKmL//v1p3rw5o0aN4quvvip0X5GRkSQnJ2O1nk0Bhg8fzqBBg5gxYwbjx4+nVq1aAEyePJmff/6ZsWPH8uyzzzr1Y7fbizymMWPG8MILLziV3X///TRq1IgXXnghX8J26NAhnnjiCUaMGOEoMwyDt99+m82bN9OgQYMi93euLVu28PLLL9O+fXuWLVvmeJ8GDRpE48aNeeCBBxwjY1988QUNGzZk0aJFTn1MnDjR8Xzp0qWkpaURHx9PcHCw03FeCpoS6UZ0HzYRERGR8sXX19eRrKWnp3P48GEOHz5M165dOXHiBJs3b863zSOPPOJ03Vh0dDRdu3Z1JBaF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a7N8+XKuvfZaGjVqROPGjRk1ahR2u91Rv3jxYho0aEC9evW45ZZbOHHixKU8hFKT/QdKq0SKiIiIiEg2lydsQ4cOZciQIWzdupXRo0cTFxeXr03lypX59NNP2bhxI7///js///wzH374IQAnT57k3//+N1988QXbtm2jVq1aPPfcc5f4KEqPga5hExERERGRbC5N2A4cOMDatWsZOHAgAP379yc5OZnt27c7tWvWrBmRkZEA+Pj4EBMTQ2JiIgDffPMNzZo1o0GDBgA88MADfPLJJ5fuIEqZxTC0SqSIiIiIiAAuTtiSk5OpWbMmVmv2pXSGYRAaGupY1rUg+/bt4/PPP+emm24CICkpibCwMEd9eHg4e/fuxWaz5dt28uTJhISEOB4nT54s5SO6eJoSKSIiIiIiuVw+JfJCnDhxgt69ezNq1ChatGhxwduPGDGClJQUxyMgIKAMorw4hmFo0REREREREQFcnLDVrl3baTTMNE2SkpIIDQ3N1zY1NZXu3bvTt29fRowY4SgPDQ1l165djteJiYlOo3aXG4uhZf1FRERERCSbSxO24OBgmjdvzpw5cwCYN28eISEh1K1b16ndyZMn6d69O927d2fMmDFOdd27d2fdunVs3rwZgClTpjBgwIBLcwBlwMDQoiMiIiIiIgK4wZTI6dOnM336dKKiopg0aRIzZswAYPDgwSxcuBCAN954gzVr1jB//nxiYmKIiYnh+eefB6BChQq899579OvXj7p165KSksLTTz/tsuO5WBYDLToiIiIiIiIAGGY5vmAqJCSElJQUV4fhpMmzS2gWWonZ/27l6lBEREREROQSKCovcfkImzjTKpEiIiIiIpJLCZubsRgGppYdERERERERlLC5HcMAu93VUYiIiIiIiDtQwuZmLIZWiRQRERERkWylmrDZbDaOHj1aml2WOwa6D5uIiIiIiGQrUcK2YMECRo0a5VQ2efJkAgICCAoKonfv3pw5c6ZUAixvDMOgHC/cKSIiIiIieZQoYXvttdfYs2eP4/WGDRsYNWoUTZo04bbbbuPrr7/mtddeK7UgyxOLVokUEREREZEc1pJstHXrVvr27et4PXfuXCpUqMAPP/yAn58fvr6+fPzxxzzxxBOlFmh5YRjoGjYREREREQFKOMJ27Ngxqlat6ni9bNkybrjhBvz8/ABo06YNu3btKp0I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vKzZpyTDphE2EREREZHyTgmbm7Facpb1t5fbgU8REREREcmhhM3NWB2rRGqETURERESkvFPC5mbOrhKpETYRERERkfJOCZubyb0Pm1aJFBERERERJWxu5uw1bErYRERERETKOyVsbubsCJumRIqIiIiIlHdK2NyMp2PRESVsIiIiIiLlnRI2N2N1LDqiKZEiIiIiIuWdEjY346mETUREREREcihhczNWS86USN04W0RERESk3FPC5mY8deNsERERERHJoYTNzeROiczQoiMiIiIiIuWeEjY3Y9UIm4iIiIiI5FDC5mbO3jhbI2wiIiIiIuWdEjY342XNPiUZNo2wiYiIiIiUd0rY3MzZETYlbCIiIiIi5Z0SNjeTu0pkphYdEREREREp95SwuRlNiRQRERERkVxK2NyMV84IW7oSNhERERGRck8Jm5vRCJuIiIiIiORSwuZmHAmb7sMmIiIiIlLuKWFzM1aLgcWADFuWq0MREREREREXU8LmZgzDwMtq0TVsIiIiIiKihM0deVs9OJVuc3UYIiIiIiLiYkrY3FDNQB/2n0h3dRgiIiIiIuJiStjckK+Xh1aJFBERERERJWzuyNtqIV2LjoiIiIiIlHtK2NyQt1UjbCIiIiIiooTNLWmVSBERERERASVsbsnbasFmN7Hp5tkiIiIiIuWaEjY35G31ACBDCZuIiIiISLnm8oRt27ZttGnThqioKFq2bMmGDRvytUlMTKRjx44EBgYSExOTr/7999+nXr161KlTh/vuu4/MzMxLEHnZqeBjBeBEmu7FJiIiIiJSnrk8YRs6dChDhgxh69atjB49mri4uHxtKlasyIQJE/j444/z1SUkJPD000+zatUqtm/fzv79+3nnnXcuQeRlp1oFbwAOndS92EREREREyjOXJmwHDhxg7dq1DBw4EID+/fuTnJzM9u3bndpVqVKF66+/Hn9//3x9fP755/Tp04caNWpgGAb3338/n3zyySWJv6xU8fcC4PCpDBdHIiIiIiIiruTShC05OZmaNWtitWZPATQMg9DQUJKSkordR1JSEmFhYY7X4eHhhW4/efJkQkJCHI+TJ09e3AGUET+v7GvY0jI0JVJEREREpDxz+ZTIS2nEiBGkpKQ4HgEBAa4OqUB+XtkJ7OkM3TxbRERERKQ8c2nCVrt2bfbu3YvNlj2SZJomSUlJhIaG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ERERuZy5fFl/V3KnZf1FRERERKR8KiovcfkIm4iIiIiIiBRMCZuIiIiIiIibUsImIiIiIiLippSwiYiIiIiIuCklbCIiIiIiIm5KCZuIiIiIiIibUsImIiIiIiLippSwiYiIiIiIuKlyfeNsb29vqlWr5uownJw8eZKAgABXhyGF0PlxfzpH7k/nyL3p/Lg/nSP3p3Pk3tzx/Bw8eJD09PQC68p1wuaOirrLubiezo/70zlyfzpH7k3nx/3pHLk/nSP3drmdH02JFBERERERcVNK2ERERERERNyUEjY3M2LECFeHIEXQ+XF/OkfuT+fIven8uD+dI/enc+TeLrfzo2vYRERERERE3JRG2ERERERERNyUEjYRERERERE3pYTNTWzbto02bdoQFRVFy5Yt2bBhg6tDuuINHz6c8PBwDMNg/fr1jvKizkVJ66Rkzpw5Q79+/YiKiiI6OpquXbuyfft2AA4cOED37t2pV68eTZo04YcffnBsV9I6uXDdunXj6quvJiYmhnbt2vHHH38A+j1yRzNmzMAwDL744gtAv0PuJDw8nPr16xMTE0NMTAyfffYZoN8jd5Kens5DDz1EvXr1aNq0KQMHDgR0jtzB4cOHHb87MTExREVFYbVaOXLkyJXzd84Ut9CpUydzxowZpmma5v/93/+ZLVq0cG1A5cD3339vJicnm2FhYeYff/zhKC/qXJS0TkomLS3N/Oqrr0y73W6apmm+9dZbZocOHUzTNM177rnHfPbZZ03TNM01a9aYV111lZmRkXFRdXLhjh496ng+f/588+qrrzZNU79H7iYhIcFs3bq1ed1115kLFiwwTVO/Q+7k3H+Hcun3yH088sgj5kMPPeT492jv3r2maeocuaOXX37ZvOmmm0zTvHL+zilhcwP79+83K1SoYGZmZpqmaZp2u92sXr26uW3bNhdHVj7k/YeyqHNR0jopPb/99psZFhZmmqZp+vv7O/7BNE3TbNmypRkfH39RdXJxZsyYYUZHR+v3yM1kZWWZXbp0MdeuXWt26NDBkbDpd8h9FJSw6ffIfZw8edKsUKGCefz4cadynSP31KBBgyvu75zVteN7ApCcnEzNmjWxWrNPh2EYhIaGkpSURN26dV0cXflS1LkIDAwsUZ3OYel544036Nu3L4cPHyYzM5MaNWo46sLDw0lKSipxnZTc3XffzYoVKwD4+uuv9XvkZiZPnkzbtm255pprHGX6HXI/d999N6Zpcu211zJp0iT9HrmRHTt2UKVKFSZOnMiyZcvw9fVl7NixVKpUSefIzfz8888cPXqUm2666Yr6O6dr2ETksjBx4kS2b9/OCy+84OpQ5BwffvghycnJTJgwgdGjR7s6HMnjn3/+Yd68eYwZM8bVoUgRfvjhB/766y/WrVtHUFAQgwYNcnVIkofNZmPXrl00atSItWvX8uabb3L77bdjs9lcHZqc4/333+fuu+92JMNXCiVsbqB27drs3bvX8YtvmiZJSUmEhoa6OLLyp6hzUdI6uXivvPIK8+fP55tvvsHPz4+qVatitVrZt2+fo01iYiKhoaElrpOLN2jQIFasWEFISIh+j9zEqlWrSExMpF69eoSHh/Prr78yZMgQ5s6dq98hN5L7/nl6evLII4+watUq/XvkRkJDQ7FYLNx1110ANGvWjIiICHbt2qVz5EZOnjzJ3LlzuffeewGuqP9XUMLmBoKDg2nevDlz5swBYN68eYSEhGhY3AWKOhclrZOLM3nyZD755BPi4+OpVKmSo/zWW29l2rRpAPz222/s3r2bDh06XFSdXJhjx46xZ88ex+svvviCqlWr6vfIjQwbNoy9e/eSmJhIYmIi1113He+88w7Dhg3T75CbOHXqFMeOHXO8/uSTT2jWrJl+j9xIUFAQXbp0YcmSJQAkJCSQkJBA27ZtdY7cyGeffUZ0dDQNGjRwlF0xf+dcceGc5Ld582bzuuuuM+vVq2dec8015l9//eXqkK54Q4YMMa+66irTw8PDDA4ONuvUqWOaZtHnoqR1UjLJyckmYEZGRprR0dFmdHS0ee2115qmaZr79u0zu3btatatW9ds1KiRuXz5csd2Ja2TC5OYmGi2bNnSbNKkiXn11VebXbp0cSycoN8j95R30RH9DrmHHTt2mDExMWbTpk3NJk2amH369DETEhJM09TvkTvZsWOH2bFjR8ffu88//9w0TZ0jd9K6dWvzgw8+cCq7Uv7OGaZpmq5LF0VERERERKQwmhIpIiIiIiLippSwiYiIiIiIuCklbCIiIiIiIm5KCZuIiIiIiIibUsImIiIiIiLippSwiYiIiIiIuCklbCIiIpdIYmIihmEwduxYV4ciIiKXCSVsIiJyWVm5ciWGYfD6668D2UnQ2LFjWb9+vUvjymvs2LF88cUXrg5DRESuAErYRETkspaYmMi4cePcKmEbN25cgQlbWFgYaWlpjBkz5tIHJSIilyUlbCIiIoWw2WykpaWVWn+GYeDj44PVai21PkVE5MqmhE1ERC5bM2fOpFOnTgDcc889GIaBYRjExcU52pw5c4bx48fTsGFDfHx8qFq1Krfeeivbtm3L15dhGMTHx/Pss88SERGBj48PS5YsAeDTTz+ld+/e1K5dG29vb6pXr84dd9zBzp07HX3kXqMGMGvWLEc84eHhTvXnXsN26tQpHn/8cSIjI/H29qZWrVoMHjyYvXv3Fhjj8uXLeemll4iIiMDb25smTZqwcOHC0nhLRUTEzegrPhERuWy1b9+eJ598kokTJzJkyBDatWsHQJ06dQDIyMigW7durFmzhri4OB555BEOHDjAlClTuO6661i7di0RERFOfY4cORLTNBk2bBh+fn6OZGvKlCkEBQUxbNgwqlWrxsaNG3nvvfdYsWIF//zzD0FBQVSrVo3Zs2cTGxtLu3btGDJkCAABAQGFHkNmZiY33ngjP/30E7fffjvt27dn06ZNTJs2jfj4eH7//XeCgoKctnniiSew2Ww89NBDmKbJ66+/Tv/+/dmyZQuRkZGl9faKiIgbUMImIiKXrcjISLp27crEiRNp3bo1AwcOdKp/6623+Omnn1i2bJljJA4gLi6OJk2aMHbsWGbNmuW0TUZGBuvWrcPX19ep/JtvvsHf39+prE+fPnTu3Jn33nuPxx9/HH9/fwYOHEhsbCyRkZH54inIzJkz+emnn3jiiSeYOHGio/z6669nwIABjBs3jrfeestpG5vNxq+//oqnpycAnTp1okWLFrzzzjtMmjTpvPsUEZHLh6ZEiojIFevjjz+mcePGNG3alEOHDjkevr6+tGrVivj4+HzbDBs2LF+yBjiSNdM0OXHiBIcOHaJp06YEBgayZs2aEse4YMECrFYro0ePdiq//fbbqVevHgsWLCgwxtxkDeCaa66hQoUKbN++vcRxiIiIe9IIm4iIXLE2bdpEWloa1apVK7DeYsn/vWXdunULbLt27VqefvppfvjhB06fPu1Ud+zYsRLHmJCQQEhICIGBgfnqGjVqxJdffklGRgZeXl6O8nOncQJUqVKFw4cPlzgOERFxT0rYRETkimW324mJieHll18u9jZ+fn75ynbt2kXHjh2pUqUK48aNo169evj5+WEYBgMGDMBut5dm2Ofl4eFRYLlpmpc0DhERKXtK2ERE5LKWuypjQerVq8ehQ4fo0qVLke3O54svvuDUqVMsXryYjh07OsrT0tI4evRoifuF7Ovwli5dSmpqKhUqVHCq27hxI1dddZXT6JqIiJQvuoZNREQua7krMBaUOMXGxpKSksL//ve/Arc9cOBAsfaRO6J17kjaSy+9VODoWkBAQLETuX79+mGz2XjllVecyv/v//6Pbdu2cfPNNxerHxERuTJphE1ERC5rjRo1IiAggClTpuDn50dgYCARERG0atWKRx55hKVLl/Lwww8THx9Phw4d8PX1ZdeuXXzzzTc0a9aMmTNnnncfPXr0wNfXl9jYWB5++GEqVqzI8uXLWbt2LVWrVs3XvlWrVixbtoyXX36Z2rVr4+/vT+/evQvsOy4ujpkzZzJ+/Hh27NhB27Zt2bx5M1OnTiU0NJRnn332Yt8iERG5jGmETURELmu+vr58/PHH+Pn5MXz4cO644w6mTp0KgJeXF9988w2vvvoqycnJjBkzhlGjRrFgwQJatmzJsGHDirWPOnXq8NVXXxEWFsaECRN4+umnsVgsfP/99wXeY+1///sf1113HePHj+eOO+7g4YcfLrRvT09Pli5dyqhRo/jpp5/4z3/+w2effUZsbCy//vprvnuwiYhI+WKYukJZRERERETELWmETURERERExE0pYRMREREREXFTSthERERERETclBI2ERERERERN6WETURERERExE0pYRMREREREXFTSthERERERETclBI2ERERERERN6WETURERERExE0pYRMREREREXFT/w8PsmUFmRd97gAAAABJRU5ErkJggg==\n"
+          },
+          "metadata": {}
+        }
+      ],
+      "source": [
+        "#Visualizing the Loss\n",
+        "fig = plt.figure(figsize=(13, 5))\n",
+        "ax = fig.gca()\n",
+        "ax.plot(chamfer_losses, label=\"chamfer loss\")\n",
+        "ax.plot(edge_losses, label=\"edge loss\")\n",
+        "ax.plot(normal_losses, label=\"normal loss\")\n",
+        "ax.plot(laplacian_losses, label=\"laplacian loss\")\n",
+        "ax.legend(fontsize=\"16\")\n",
+        "ax.set_xlabel(\"Iteration\", fontsize=\"16\")\n",
+        "ax.set_ylabel(\"Loss\", fontsize=\"16\")\n",
+        "ax.set_title(\"Loss vs iterations\", fontsize=\"16\");"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "execution_count": null,
+      "metadata": {
+        "id": "PLZ_eq9Zax5d"
+      },
+      "outputs": [],
+      "source": [
+        "#saving the predicted mesh\n",
+        "# Fetching the verts and faces of the final predicted mesh\n",
+        "final_verts, final_faces = new_src_mesh.get_mesh_verts_faces(0)\n",
+        "\n",
+        "# Scaling normalize back to the original target size\n",
+        "final_verts = final_verts * scale + center\n",
+        "\n",
+        "# Storing the predicted mesh using save_obj\n",
+        "final_obj = os.path.join('./', '040_.obj')\n",
+        "save_obj(final_obj, final_verts, final_faces)"
+      ]
+    },
+    {
+      "cell_type": "code",
+      "source": [],
+      "metadata": {
+        "id": "qP5EJ_EaBOWh"
+      },
+      "execution_count": null,
+      "outputs": []
+    }
+  ],
+  "metadata": {
+    "accelerator": "GPU",
+    "colab": {
+      "gpuType": "T4",
+      "provenance": [],
+      "include_colab_link": true
+    },
+    "kernelspec": {
+      "display_name": "Python 3",
+      "name": "python3"
+    },
+    "language_info": {
+      "name": "python"
+    },
+    "widgets": {
+      "application/vnd.jupyter.widget-state+json": {
+        "9ffc342e63014c9c9f3f6a1214dbef96": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "HBoxModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_dom_classes": [],
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "HBoxModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/controls",
+            "_view_module_version": "1.5.0",
+            "_view_name": "HBoxView",
+            "box_style": "",
+            "children": [
+              "IPY_MODEL_add1b34b2d3e4a60b66d0d6ff45d2446",
+              "IPY_MODEL_ebdd0ec30b1a467082a4913084fa1aba",
+              "IPY_MODEL_d3db434f227647d9a16b9579321d37fa"
+            ],
+            "layout": "IPY_MODEL_2b69b8f655334f9a91907d398a322b07"
+          }
+        },
+        "add1b34b2d3e4a60b66d0d6ff45d2446": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "HTMLModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_dom_classes": [],
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "HTMLModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/controls",
+            "_view_module_version": "1.5.0",
+            "_view_name": "HTMLView",
+            "description": "",
+            "description_tooltip": null,
+            "layout": "IPY_MODEL_f36f319a149a4d22b3fdcc07ca471aa4",
+            "placeholder": "​",
+            "style": "IPY_MODEL_062450fcd78f45d5b5e7a0a960ea7a7b",
+            "value": "total_loss = 0.004665: 100%"
+          }
+        },
+        "ebdd0ec30b1a467082a4913084fa1aba": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "FloatProgressModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_dom_classes": [],
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "FloatProgressModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/controls",
+            "_view_module_version": "1.5.0",
+            "_view_name": "ProgressView",
+            "bar_style": "success",
+            "description": "",
+            "description_tooltip": null,
+            "layout": "IPY_MODEL_02adddf990d24795a9e50690c3110b00",
+            "max": 7000,
+            "min": 0,
+            "orientation": "horizontal",
+            "style": "IPY_MODEL_4be4c6d389ea418485f3213991562be8",
+            "value": 7000
+          }
+        },
+        "d3db434f227647d9a16b9579321d37fa": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "HTMLModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_dom_classes": [],
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "HTMLModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/controls",
+            "_view_module_version": "1.5.0",
+            "_view_name": "HTMLView",
+            "description": "",
+            "description_tooltip": null,
+            "layout": "IPY_MODEL_5a346293e28646ccbf8a89f5957c1fac",
+            "placeholder": "​",
+            "style": "IPY_MODEL_e241f6cd1b87425091fa31e64f7787db",
+            "value": " 7000/7000 [02:10&lt;00:00, 57.20it/s]"
+          }
+        },
+        "2b69b8f655334f9a91907d398a322b07": {
+          "model_module": "@jupyter-widgets/base",
+          "model_name": "LayoutModel",
+          "model_module_version": "1.2.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/base",
+            "_model_module_version": "1.2.0",
+            "_model_name": "LayoutModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "LayoutView",
+            "align_content": null,
+            "align_items": null,
+            "align_self": null,
+            "border": null,
+            "bottom": null,
+            "display": null,
+            "flex": null,
+            "flex_flow": null,
+            "grid_area": null,
+            "grid_auto_columns": null,
+            "grid_auto_flow": null,
+            "grid_auto_rows": null,
+            "grid_column": null,
+            "grid_gap": null,
+            "grid_row": null,
+            "grid_template_areas": null,
+            "grid_template_columns": null,
+            "grid_template_rows": null,
+            "height": null,
+            "justify_content": null,
+            "justify_items": null,
+            "left": null,
+            "margin": null,
+            "max_height": null,
+            "max_width": null,
+            "min_height": null,
+            "min_width": null,
+            "object_fit": null,
+            "object_position": null,
+            "order": null,
+            "overflow": null,
+            "overflow_x": null,
+            "overflow_y": null,
+            "padding": null,
+            "right": null,
+            "top": null,
+            "visibility": null,
+            "width": null
+          }
+        },
+        "f36f319a149a4d22b3fdcc07ca471aa4": {
+          "model_module": "@jupyter-widgets/base",
+          "model_name": "LayoutModel",
+          "model_module_version": "1.2.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/base",
+            "_model_module_version": "1.2.0",
+            "_model_name": "LayoutModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "LayoutView",
+            "align_content": null,
+            "align_items": null,
+            "align_self": null,
+            "border": null,
+            "bottom": null,
+            "display": null,
+            "flex": null,
+            "flex_flow": null,
+            "grid_area": null,
+            "grid_auto_columns": null,
+            "grid_auto_flow": null,
+            "grid_auto_rows": null,
+            "grid_column": null,
+            "grid_gap": null,
+            "grid_row": null,
+            "grid_template_areas": null,
+            "grid_template_columns": null,
+            "grid_template_rows": null,
+            "height": null,
+            "justify_content": null,
+            "justify_items": null,
+            "left": null,
+            "margin": null,
+            "max_height": null,
+            "max_width": null,
+            "min_height": null,
+            "min_width": null,
+            "object_fit": null,
+            "object_position": null,
+            "order": null,
+            "overflow": null,
+            "overflow_x": null,
+            "overflow_y": null,
+            "padding": null,
+            "right": null,
+            "top": null,
+            "visibility": null,
+            "width": null
+          }
+        },
+        "062450fcd78f45d5b5e7a0a960ea7a7b": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "DescriptionStyleModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "DescriptionStyleModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "StyleView",
+            "description_width": ""
+          }
+        },
+        "02adddf990d24795a9e50690c3110b00": {
+          "model_module": "@jupyter-widgets/base",
+          "model_name": "LayoutModel",
+          "model_module_version": "1.2.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/base",
+            "_model_module_version": "1.2.0",
+            "_model_name": "LayoutModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "LayoutView",
+            "align_content": null,
+            "align_items": null,
+            "align_self": null,
+            "border": null,
+            "bottom": null,
+            "display": null,
+            "flex": null,
+            "flex_flow": null,
+            "grid_area": null,
+            "grid_auto_columns": null,
+            "grid_auto_flow": null,
+            "grid_auto_rows": null,
+            "grid_column": null,
+            "grid_gap": null,
+            "grid_row": null,
+            "grid_template_areas": null,
+            "grid_template_columns": null,
+            "grid_template_rows": null,
+            "height": null,
+            "justify_content": null,
+            "justify_items": null,
+            "left": null,
+            "margin": null,
+            "max_height": null,
+            "max_width": null,
+            "min_height": null,
+            "min_width": null,
+            "object_fit": null,
+            "object_position": null,
+            "order": null,
+            "overflow": null,
+            "overflow_x": null,
+            "overflow_y": null,
+            "padding": null,
+            "right": null,
+            "top": null,
+            "visibility": null,
+            "width": null
+          }
+        },
+        "4be4c6d389ea418485f3213991562be8": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "ProgressStyleModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "ProgressStyleModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "StyleView",
+            "bar_color": null,
+            "description_width": ""
+          }
+        },
+        "5a346293e28646ccbf8a89f5957c1fac": {
+          "model_module": "@jupyter-widgets/base",
+          "model_name": "LayoutModel",
+          "model_module_version": "1.2.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/base",
+            "_model_module_version": "1.2.0",
+            "_model_name": "LayoutModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "LayoutView",
+            "align_content": null,
+            "align_items": null,
+            "align_self": null,
+            "border": null,
+            "bottom": null,
+            "display": null,
+            "flex": null,
+            "flex_flow": null,
+            "grid_area": null,
+            "grid_auto_columns": null,
+            "grid_auto_flow": null,
+            "grid_auto_rows": null,
+            "grid_column": null,
+            "grid_gap": null,
+            "grid_row": null,
+            "grid_template_areas": null,
+            "grid_template_columns": null,
+            "grid_template_rows": null,
+            "height": null,
+            "justify_content": null,
+            "justify_items": null,
+            "left": null,
+            "margin": null,
+            "max_height": null,
+            "max_width": null,
+            "min_height": null,
+            "min_width": null,
+            "object_fit": null,
+            "object_position": null,
+            "order": null,
+            "overflow": null,
+            "overflow_x": null,
+            "overflow_y": null,
+            "padding": null,
+            "right": null,
+            "top": null,
+            "visibility": null,
+            "width": null
+          }
+        },
+        "e241f6cd1b87425091fa31e64f7787db": {
+          "model_module": "@jupyter-widgets/controls",
+          "model_name": "DescriptionStyleModel",
+          "model_module_version": "1.5.0",
+          "state": {
+            "_model_module": "@jupyter-widgets/controls",
+            "_model_module_version": "1.5.0",
+            "_model_name": "DescriptionStyleModel",
+            "_view_count": null,
+            "_view_module": "@jupyter-widgets/base",
+            "_view_module_version": "1.2.0",
+            "_view_name": "StyleView",
+            "description_width": ""
+          }
+        }
+      }
+    }
+  },
+  "nbformat": 4,
+  "nbformat_minor": 0
+}
